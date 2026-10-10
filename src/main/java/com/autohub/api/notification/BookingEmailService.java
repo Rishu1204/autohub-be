@@ -1,54 +1,102 @@
+
 package com.autohub.api.notification;
 
 import com.autohub.api.booking.Booking;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+
+import java.util.List;
+import java.util.Map;
 
 @Service
 public class BookingEmailService {
 
-    private static final Logger log = LoggerFactory.getLogger(BookingEmailService.class);
-    private final JavaMailSender mailSender;
-    @Value("${app.booking.to-email:}") private String toEmail;
-    @Value("${spring.mail.username:}") private String fromEmail;
+    private static final Logger log =
+            LoggerFactory.getLogger(BookingEmailService.class);
 
-    public BookingEmailService(JavaMailSender mailSender) { this.mailSender = mailSender; }
+    private final RestClient restClient;
+    private final String apiKey;
+    private final String fromEmail;
+    private final String toEmail;
+
+    public BookingEmailService(
+            @Value("${resend.api-key:}") String apiKey,
+            @Value("${app.mail.from:onboarding@resend.dev}") String fromEmail,
+            @Value("${app.booking.to-email:}") String toEmail) {
+
+        this.apiKey = apiKey;
+        this.fromEmail = fromEmail;
+        this.toEmail = toEmail;
+        this.restClient = RestClient.create();
+    }
 
     public void sendBookingNotification(Booking booking) {
-        if (toEmail.isBlank() || fromEmail.isBlank()) {
-            log.warn("Booking email is not configured; booking id={} was saved but no email was sent.", booking.getId());
+        if (apiKey.isBlank() || toEmail.isBlank()
+                || fromEmail.isBlank()) {
+            log.warn(
+                    "Resend email is not configured; booking id={} was saved but no email was sent.",
+                    booking.getId());
             return;
         }
-        SimpleMailMessage mail = new SimpleMailMessage();
-        mail.setFrom(fromEmail);
-        mail.setTo(toEmail);
-        mail.setReplyTo(booking.getEmail());
-        mail.setSubject("AutoHub booking request #" + booking.getId() + " — " + booking.getService());
-        StringBuilder message = new StringBuilder();
 
-        message.append("A new booking request was submitted.\n\n")
-                .append("Booking ID: ").append(booking.getId()).append("\n")
-                .append("Name: ").append(booking.getName()).append("\n")
-                .append("Email: ").append(booking.getEmail()).append("\n")
-                .append("Phone: ").append(booking.getPhone()).append("\n")
-                .append("Service: ").append(booking.getService()).append("\n")
-                .append("Preferred date: ")
-                .append(booking.getPreferredDate() == null
+        String message = """
+                A new booking request was submitted.
+
+                Booking ID: %s
+                Name: %s
+                Email: %s
+                Phone: %s
+                Service: %s
+                Preferred date: %s
+
+                Message:
+                %s
+                """.formatted(
+                booking.getId(),
+                booking.getName(),
+                booking.getEmail(),
+                booking.getPhone(),
+                booking.getService(),
+                booking.getPreferredDate() == null
                         ? "Not specified"
-                        : booking.getPreferredDate())
-                .append("\n\n")
-                .append("Message:\n")
-                .append(booking.getMessage().isBlank() ? " " : booking.getMessage());
+                        : booking.getPreferredDate(),
+                booking.getMessage() == null
+                        || booking.getMessage().isBlank()
+                        ? "Not provided"
+                        : booking.getMessage()
+        );
 
-        mail.setText(message.toString());
+        Map<String, Object> request = Map.of(
+                "from", "AutoHub <" + fromEmail + ">",
+                "to", List.of(toEmail),
+                "reply_to", booking.getEmail(),
+                "subject", "AutoHub booking request #"
+                        + booking.getId() + " - "
+                        + booking.getService(),
+                "text", message
+        );
+
         try {
-            mailSender.send(mail);
+            restClient.post()
+                    .uri("https://api.resend.com/emails")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            log.info(
+                    "Booking notification accepted by Resend for booking id={}",
+                    booking.getId());
+
         } catch (Exception ex) {
-            log.error("Booking id={} saved, but notification email failed.", booking.getId(), ex);
+            log.error(
+                    "Booking id={} was saved, but Resend email delivery request failed.",
+                    booking.getId(), ex);
         }
     }
 }
