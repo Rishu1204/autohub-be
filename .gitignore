@@ -1,0 +1,31 @@
+
+# Gradle
+.gradle/
+build/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# Java
+*.class
+hs_err_pid*
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Local H2 database files
+data/
+*.mv.db
+*.trace.db
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
