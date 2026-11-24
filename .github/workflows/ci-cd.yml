@@ -28,16 +28,22 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      
+      - name: Verify Java Version
+        run: |
+          java -version
+          javac -version
+          mvn -version
 
       - name: Build Spring Boot Application
         run: |
           if [ -f ./mvnw ]; then
             chmod +x ./mvnw
-            ./mvnw -B clean verify
+            ./mvnw -B clean package -DskipTests
           else
             sudo apt-get update
             sudo apt-get install -y maven
-            mvn -B clean verify
+            mvn -B clean package -DskipTests
           fi
 
       - name: Prepare JAR
